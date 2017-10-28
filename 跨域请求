@@ -1,0 +1,411 @@
+- 什么是跨域
+
+- JSONP
+
+- proxy代理
+
+- cors
+
+- xdr
+
+　　由于浏览器同源策略，凡是发送请求url的协议、域名、端口三者之间任意一与当前页面地址不同即为跨域。具体可以查看下表（来源）
+
+
+　　JSONP
+
+　　这种方式主要是通过动态插入一个script标签。浏览器对script的资源引用没有同源限制，同时资源加载到页面后会立即执行（没有阻塞的情况下）。
+
+1 <script>
+2      var _script = document.createElement('script');
+3      _script.type = "text/javascript";
+4      _script.src = "http://localhost:8888/jsonp?callback=f";
+5       document.head.appendChild(_script);
+6    </script>
+
+
+　　实际项目中JSONP通常用来获取json格式数据，这时前后端通常约定一个参数callback，该参数的值，就是处理返回数据的函数名称。
+
+1 <!doctype html>
+2 <html>
+3  <head>
+4    <meta charset="utf-8">
+5    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no">
+6    <title>jsonp_test</title>
+7
+8    <script>
+9      var f = function(data){
+10         alert(data.name);
+11       }
+12      /*var xhr = new XMLHttpRequest();
+13       xhr.onload = function(){
+14         alert(xhr.responseText);
+15       };
+16       xhr.open('POST', 'http://localhost:8888/cors', true);
+17       xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+18       xhr.send("f=json");*/19    </script>
+20   
+21    <script>
+22      var _script = document.createElement('script');
+23      _script.type = "text/javascript";
+24      _script.src = "http://localhost:8888/jsonp?callback=f";
+25       document.head.appendChild(_script);
+26    </script>
+27  </head>
+
+
+1 var query = _url.query;
+2         console.log(query);
+3        var params = qs.parse(query);
+4         console.log(params);
+5        var f = "";
+6   
+7        f = params.callback;
+8   
+9        res.writeHead(200, {"Content-Type": "text/javascript"});
+10        res.write(f + "({name:'hello world'})");
+11        res.end();
+
+
+
+　　缺点：
+
+　　1、这种方式无法发送post请求（这里）
+
+　　2、另外要确定jsonp的请求是否失败并不容易，大多数框架的实现都是结合超时时间来判定。
+
+
+　　Proxy代理
+
+　　这种方式首先将请求发送给后台服务器，通过服务器来发送请求，然后将请求的结果传递给前端。
+
+1 <!doctype html>
+2 <html>
+3  <head>
+4    <meta charset="utf-8">
+5    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no">
+6    <title>proxy_test</title>
+7
+8    <script>
+9      var f = function(data){
+10         alert(data.name);
+11       }
+12      var xhr = new XMLHttpRequest();
+13      xhr.onload = function(){
+14         alert(xhr.responseText);
+15       };
+16      xhr.open('POST', 'http://localhost:8888/proxy?http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer', true);
+17      xhr.send("f=json");
+18    </script>
+19  </head>
+20 
+21  <body>
+22  </body>
+23 </html>
+
+
+1 var proxyUrl = "";
+2      if (req.url.indexOf('?') > -1) {
+3          proxyUrl = req.url.substr(req.url.indexOf('?') + 1);
+4           console.log(proxyUrl);
+5       }
+6      if (req.method === 'GET') {
+7           request.get(proxyUrl).pipe(res);
+8      } else if (req.method === 'POST') {
+9          var post = '';    //定义了一个post变量，用于暂存请求体的信息10
+11        req.on('data', function(chunk){    //通过req的data事件监听函数，每当接受到请求体的数据，就累加到post变量中12            post += chunk;
+13         });
+14   
+15        req.on('end', function(){    //在end事件触发后，通过querystring.parse将post解析为真正的POST请求格式，然后向客户端返回。16            post = qs.parse(post);
+17             request({
+18                      method: 'POST',
+19                       url: proxyUrl,
+20                       form: post
+21                   }).pipe(res);
+22         });
+23      }
+
+
+
+　 需要注意的是如果你代理的是https协议的请求，那么你的proxy首先需要信任该证书（尤其是自定义证书）或者忽略证书检查，否则你的请求无法成功。12306就提供了一个鲜活的例子。
+
+
+
+　　还需要注意一点，对于同一请求浏览器通常会从缓存中读取数据，我们有时候不想从缓存中读取，所以会加一个preventCache参数，这个时候请求url变成：url?preventCache=12345567....;这本身没有什么问题，问题出在当使用某些前端框架（比如jquery）发送proxy代理请求时，请求url为proxy?url，同时设置preventCache：true，框架不能正确处理这个参数，结果发出去的请求变成proxy?url&preventCache=123456（正长应为proxy?url?preventCache=12356）;后端截取后发送的请求为url&preventCache=123456，根本没有这个地址，所以你得不到正确结果。
+
+
+　　CORS
+
+　　这是现代浏览器支持跨域资源请求的一种方式。
+
+
+　　当你使用XMLHttpRequest发送请求时，浏览器发现该请求不符合同源策略，会给该请求加一个请求头：Origin，后台进行一系列处理，如果确定接受请求则在返回结果中加入一个响应头：Access-Control-Allow-Origin;浏览器判断该相应头中是否包含Origin的值，如果有则浏览器会处理响应，我们就可以拿到响应数据，如果不包含浏览器直接驳回，这时我们无法拿到响应数据。
+
+1 <!doctype html>
+2 <html>
+3  <head>
+4    <meta charset="utf-8">
+5    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no">
+6    <title>jsonp_test</title>
+7
+8    <script>
+9      /*var f = function(data){
+10         alert(data.name);
+11       }*/12      var xhr = new XMLHttpRequest();
+13      xhr.onload = function(){
+14         alert(xhr.responseText);
+15       };
+16      xhr.open('POST', 'http://localhost:8888/cors', true);
+17      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+18      xhr.send("f=json");
+19    </script>
+20   
+21    <script>
+22      /* var _script = document.createElement('script');
+23       _script.type = "text/javascript";
+24       _script.src = "http://localhost:8888/jsonp?callback=f";
+25       document.head.appendChild(_script);*/26    </script>
+27  </head>
+28 
+29  <body>
+30  </body>
+31 </html>
+
+
+
+1 if (req.headers.origin) {
+2
+3            res.writeHead(200, {
+4                "Content-Type": "text/html; charset=UTF-8",
+5                "Access-Control-Allow-Origin":'http://localhost'/*,
+6                 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+7                 'Access-Control-Allow-Headers': 'X-Requested-With, Content-Type'*/ 8             });
+9            res.write('cors');
+10             res.end();
+11        }
+
+
+
+　　如果我们把Access-Control-Allow-Origin去掉，浏览器会驳回响应，我们也就拿不到数据。
+
+
+　　需要注意的一点是Preflighted Request的透明服务器验证机制支持开发人员使用自定义的头部、GET或POST之外的方法，以及不同类型的主题内容。总结如如：
+
+　　1、非GET 、POST请求
+
+　　2、POST请求的content-type不是常规的三个：application/x- www-form-urlencoded（使用 HTTP 的 POST 方法提交的表单）、multipart/form-data（同上，但主要用于表单提交时伴随文件上传的场合）、text/plain（纯文本）
+
+　　3、POST请求的payload为text/html
+
+　　4、设置自定义头部
+
+　　OPTIONS请求头部中会包含以下头部：Origin、Access-Control-Request-Method、Access-Control-Request-Headers，发送这个请求后，服务器可以设置如下头部与浏览器沟通来判断是否允许这个请求。
+
+　　Access-Control-Allow-Origin、Access-Control-Allow-Method、Access-Control-Allow-Headers
+
+1 var xhr = new XMLHttpRequest();
+2      xhr.onload = function(){
+3         alert(xhr.responseText);
+4       };
+5      xhr.open('POST', 'http://localhost:8888/cors', true);
+6      xhr.setRequestHeader("Content-Type", "text/html");
+7      xhr.send("f=json");
+
+
+1 if (req.headers.origin) {
+2
+3            res.writeHead(200, {
+4                "Content-Type": "text/html; charset=UTF-8",
+5                "Access-Control-Allow-Origin":'http://localhost',
+6                'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+7                'Access-Control-Allow-Headers': 'X-Requested-With, Content-Type'/**/ 8             });
+9            res.write('cors');
+10             res.end();
+11        }
+
+
+
+　　如果你在调试状态，你会发现后台代码执行了两遍，说明发送了两次请求。注意一下我们的onload代码只执行了一次，所以说OPTIONS请求对程序来说是透明的，他的请求结果会被缓存起来。
+
+　　如果我们修改一下后台代码，把Content-Type去掉，你会发现OPTIONS请求失败。
+
+
+　　通过setRequestHeader('X-Request-With', null)可以避免浏览器发送OPTIONS请求。
+
+　　根据我的测试，当使用cors发送跨域请求时失败时，后台是接收到了这次请求，后台可能也执行了数据查询操作，只是响应头部不合符要求，浏览器阻断了这次请求。
+
+
+　　XDR
+
+　　这是IE8、IE9提供的一种跨域解决方案，功能较弱只支持get跟post请求，而且对于协议不同的跨域是无能为力的，比如在http协议下发送https请求。看一下微软自己的例子就行
+
+1 <!DOCTYPE html> 2
+3 <html> 4 <body> 5  <h2>XDomainRequest</h2> 6  <input type="text" id="tbURL" value="http://www.contoso.com/xdr.txt" style="width: 300px"><br> 7  <input type="text" id="tbTO" value="10000"><br> 8  <input type="button" onclick="mytest()" value="Get">&nbsp;&nbsp;&nbsp; 9    <input type="button" onclick="stopdata()" value="Stop">&nbsp;&nbsp;&nbsp;10    <input type="button" onclick="readdata()" value="Read">11  <br>12  <div id="dResponse"></div>13  <script>14    var xdr;
+15    function readdata()
+16     {
+17      var dRes = document.getElementById('dResponse');
+18       dRes.innerText = xdr.responseText;
+19       alert("Content-type: " + xdr.contentType);
+20       alert("Length: " + xdr.responseText.length);
+21     }
+22   
+23    function err()
+24     {
+25       alert("XDR onerror");
+26     }
+27
+28    function timeo()
+29     {
+30       alert("XDR ontimeout");
+31     }
+32
+33    function loadd()
+34     {
+35       alert("XDR onload");
+36       alert("Got: " + xdr.responseText);
+37     }
+38
+39    function progres()
+40     {
+41       alert("XDR onprogress");
+42       alert("Got: " + xdr.responseText);
+43     }
+44
+45    function stopdata()
+46     {
+47       xdr.abort();
+48     }
+49
+50    function mytest()
+51     {
+52      var url = document.getElementById('tbURL');
+53      var timeout = document.getElementById('tbTO');
+54      if (window.XDomainRequest)
+55       {
+56         xdr = new XDomainRequest();
+57        if (xdr)
+58         {
+59           xdr.onerror = err;
+60           xdr.ontimeout = timeo;
+61           xdr.onprogress = progres;
+62           xdr.onload = loadd;
+63           xdr.timeout = tbTO.value;
+64           xdr.open("get", tbURL.value);
+65           xdr.send();
+66         }
+67        else68         {
+69           alert("Failed to create");
+70         }
+71       }
+72      else73       {
+74         alert("XDR doesn't exist");
+75       }
+76     }
+77  </script>78 </body>79 </html>
+
+
+　　以上就是我在实际项目中遇到的跨域请求资源的情况，有一种跨域需要特别注意就是在https协议下发送https请求，除了使用proxy代理外其他方法都无解，会被浏览器直接block掉。如果哪位道友知道解决方法，麻烦你告诉我一声。
+
+　　最后附上完整的测试demo
+
+　　iss中：
+
+1 <!doctype html> 2 <html> 3  <head> 4    <meta charset="utf-8"> 5    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no"> 6    <title>jsonp_test</title> 7
+8    <script> 9      /*var f = function(data){
+10         alert(data.name);
+11       }*/12      var xhr = new XMLHttpRequest();
+13       xhr.onload = function(){
+14         alert(xhr.responseText);
+15       };
+16       xhr.open('POST', 'http://localhost:8888/cors', true);
+17       xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+18       xhr.setRequestHeader("aaaa","b");
+19       xhr.send("f=json");
+20    </script>21   
+22    <script>23      /* var _script = document.createElement('script');
+24       _script.type = "text/javascript";
+25       _script.src = "http://localhost:8888/jsonp?callback=f";
+26       document.head.appendChild(_script);*/27    </script>28  </head>29 
+30  <body>31  </body>32 </html>
+
+　　node-html
+
+1 <!doctype html> 2 <html> 3  <head> 4    <meta charset="utf-8"> 5    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no"> 6    <title>proxy_test</title> 7
+8    <script> 9      var f = function(data){
+10         alert(data.name);
+11       }
+12      var xhr = new XMLHttpRequest();
+13       xhr.onload = function(){
+14         alert(xhr.responseText);
+15       };
+16       xhr.open('POST', 'http://localhost:8888/proxy?https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer', true);
+17       xhr.send("f=json");
+18    </script>19  </head>20 
+21  <body>22  </body>23 </html>
+
+　　node-server
+
+1 var http = require('http');
+2 var url = require('url');
+3 var fs = require('fs');
+4 var qs = require('querystring');
+5 var request = require('request');
+6
+7 http.createServer(function(req, res){
+8     var _url = url.parse(req.url);
+9     if (_url.pathname === '/jsonp') {
+10         var query = _url.query;
+11         console.log(query);
+12         var params = qs.parse(query);
+13         console.log(params);
+14         var f = "";
+15   
+16         f = params.callback;
+17   
+18         res.writeHead(200, {"Content-Type": "text/javascript"});
+19         res.write(f + "({name:'hello world'})");
+20         res.end();
+21     } else if (_url.pathname === '/proxy') {
+22       var proxyUrl = "";
+23       if (req.url.indexOf('?') > -1) {
+24           proxyUrl = req.url.substr(req.url.indexOf('?') + 1);
+25           console.log(proxyUrl);
+26       }
+27       if (req.method === 'GET') {
+28           request.get(proxyUrl).pipe(res);
+29       } else if (req.method === 'POST') {
+30           var post = '';    //定义了一个post变量，用于暂存请求体的信息
+31
+32         req.on('data', function(chunk){    //通过req的data事件监听函数，每当接受到请求体的数据，就累加到post变量中
+33             post += chunk;
+34         });
+35   
+36         req.on('end', function(){    //在end事件触发后，通过querystring.parse将post解析为真正的POST请求格式，然后向客户端返回。
+37             post = qs.parse(post);
+38             request({
+39                       method: 'POST',
+40                       url: proxyUrl,
+41                       form: post
+42                   }).pipe(res);
+43         });
+44       }
+45     } else if (_url.pathname === '/index') {
+46         fs.readFile('./index.html', function(err, data) {
+47           res.writeHead(200, {"Content-Type": "text/html; charset=UTF-8"});
+48             res.write(data);
+49             res.end();
+50         });
+51     } else if (_url.pathname === '/cors') {
+52         if (req.headers.origin) {
+53
+54             res.writeHead(200, {
+55                 "Content-Type": "text/html; charset=UTF-8",
+56                 "Access-Control-Allow-Origin":'http://localhost',
+57                 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+58                 'Access-Control-Allow-Headers': 'X-Requested-With, Content-Type,aaaa'/**/
+59             });
+60             res.write('cors');
+61             res.end();
+62         }
+63     }
+64   
+65 }).listen(8888);
