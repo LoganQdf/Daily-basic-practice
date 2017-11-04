@@ -1,0 +1,26 @@
+ws.on('connection',(socket,req,res)=> {
+    //第一登录发送信息，保存socket
+    socket.on('first',(data,username)=>{
+        usersocket[username]=socket;
+    })
+    socket.on('foo',(data,username)=>{
+        let newdata=data.replace(/@[a-z0-9\-_]+\b/igm,'').trim();
+        socket.emit('mes',newdata,username);
+        let u = 'qdf456'
+        if(usersocket[u]&&(username!=u)){
+            usersocket[u].emit('mes',newdata,username);
+        }
+
+        //@人，并且管理员发信息只能at人
+        let atuser=data.match(/@[a-z0-9\-_]+\b/igm);
+        //如果有@人
+        if(atuser){
+            atuser.forEach(function (atur) {
+                //判断@的人是否在线
+                if(usersocket[atur.substring(1)]){
+                    usersocket[atur.substring(1)].emit('mes',newdata,username);
+                }
+            })
+        }
+    })
+})
