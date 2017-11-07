@@ -1,0 +1,139 @@
+/**
+ * Created by root on 2017/11/4.
+ */
+$(function () {
+    const socket = io.connect();
+    //基本消息发送区***********************************************************
+    const username = $('#sendBtn').attr('target');
+    const firstmsg =   `${username}上线啦`;
+    socket.emit('first', firstmsg,username);
+    //点击发送，发送消息并清空发送框
+    $(document).on('click','#sendBtn',()=> {
+        let message = $('#messageInput').val();
+        let fontcolor = $('#colorStyle').val();
+        // console.log(fontcolor);
+        socket.emit('foo',message,username,fontcolor);
+        $('#messageInput').val('');
+    })
+    //接收信息并发送到消息框
+    socket.on('mes',(msgs,user,fontcolor)=>{
+        //如果发过来是表情则在这里面处理后返回处理结果
+        let result=showEmoji(msgs);
+        let date = new Date();
+        let color = fontcolor || '#000';
+        let time =date.toTimeString().substr(0,8);
+        let p = $('<p></p>').html(`${time}<br>${user}:${result}`);
+        p.css('color',color);
+        $('#historyMsg').append(p)
+    })
+
+    //表情区************************************************************
+    const initEmoji=function () {
+        let emojiContainer = $('#emojiWrapper');
+        let docFragment = $('<div></div>')
+        for(let i = 1;i<70;i++){
+            let url = `/emoji/${i}.gif`
+            let img = $("<img>");
+            img.attr('title',i)
+            let emogiItem =img.attr('src',url);
+            docFragment.append(emogiItem);
+        }
+        emojiContainer.append(docFragment);
+    }
+    initEmoji();
+    //点击表情按钮显示表情
+    document.getElementById('emoji').addEventListener('click', function(e) {
+        var emojiwrapper = document.getElementById('emojiWrapper');
+        emojiwrapper.style.display = 'block';
+        e.stopPropagation();
+    }, false);
+    //点击其它地方取消
+    document.body.addEventListener('click', function(e) {
+        var emojiwrapper = document.getElementById('emojiWrapper');
+        if (e.target != emojiwrapper) {
+            emojiwrapper.style.display = 'none';
+        };
+    });
+    //点击表情将表情加入到输入框内
+    $(document).on('click','#emojiWrapper',event=> {
+        if($(event.target).is('img')){
+            $('#messageInput').val($('#messageInput').val()+'[emoji:' + $(event.target).attr('title') + ']');
+        }
+    })
+    //过滤发来的信息是否含有表情，转化为图片显示
+    const showEmoji= function show(msgs) {
+        let match;
+        let emojiIndex;
+        let result = msgs;
+        let reg = /\[emoji:\d+\]/g;
+        let imglength = $('#emojiWrapper').children('div').children().length;
+        while (match=reg.exec(msgs)){
+            emojiIndex = match[0].slice(7, -1);
+            if(emojiIndex>imglength){
+                result = result.replace(match[0],'[X]');
+            } else {
+                result = result.replace(match[0], '<img class="emoji" src="/emoji/' + emojiIndex + '.gif" />');
+            };
+        };
+        return result;
+    }
+    //点击clear 清空
+    $(document).on('click','#clearBtn',()=> {
+        $('#historyMsg').html('');
+    })
+    //回车发送事件
+    $(document).bind('keyup',event=> {
+        if(event.keyCode=='13'){
+            $('#sendBtn').click();
+        }
+    })
+    //读取图片，并解析并发送base64发送
+    $('#sendImage').change(event=>{
+        //获取文件的信息
+        // var file = event.target.files[0];
+        // console.log(file);
+        if(event.target.files.length !=0){
+            let file = event.target.files[0];
+            let reader = new FileReader();
+            //截取type类型
+            let type = file.type.split('/')[0];
+            // console.log(file.type);
+            if(type!='image'){
+                let date = new Date();
+                let time =date.toTimeString().substr(0,8);
+                let result = `'!your browser doesn\'t support fileReader'`;
+                let p = $('<p></p>').html(`${time}<br>警告:${result}`);
+                p.css('color','red');
+                $('#historyMsg').append(p);
+                return
+            }
+            //FileReader对象的readAsDataURL方法可以将读取到的文件编码成Data URL
+            reader.readAsDataURL(file);
+            reader.onload = event=>{
+                let fontcolor = $('#colorStyle').val();
+                socket.emit('img',event.target.result,username,fontcolor);
+            }
+        }
+    })
+    //显示图片的方法
+    socket.on('imgs',(msgs,user,fontcolor)=>{
+        let date = new Date();
+        let color = fontcolor || '#000';
+        let time =date.toTimeString().substr(0,8);
+        let msgToDisplay = $('<p></p>').css('color',color);
+        let result = `<a href="${msgs}" target="_blank"><img src="${msgs}"/></a>`;
+        msgToDisplay.html(`${time}<br>${user}<br>${result}`)
+        $('#historyMsg').append(msgToDisplay);
+        $('#historyMsg').scrollTop = $('#historyMsg').scrollHeight;
+    })
+
+    //点击关闭聊天框事件
+    $(document).on('click','.color',event=>{
+        $('.wrapper').css('display','none')
+    })
+    //点击客服打开聊天框
+    $(document).on('click','.showchat',event=>{
+        console.log(111);
+        $('.wrapper').css('display','block')
+    })
+})
