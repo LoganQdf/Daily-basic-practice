@@ -1,0 +1,7 @@
+两个模块将数据压缩称gzip
+oppressor
+stream.pipe(oppressor(req)).pipe(res);
+zlib  
+var gzip = zlib.createGzip(); 压缩
+var gunzip = zlib.createGunzip(); 解压
+inFile.pipe(gunzip).pipe(outFile);
